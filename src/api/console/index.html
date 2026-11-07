@@ -1,0 +1,435 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relay Console</title>
+<style>
+  :root { --bg:#f6f7fb; --panel:#fff; --line:#e3e6ef; --text:#1d2433; --muted:#6b7385; --accent:#4f46e5; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; align-items:center; gap:16px; padding:10px 20px; background:#111827; color:#fff; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; letter-spacing:.3px; }
+  header .spacer { flex:1; }
+  header label { font-size:12px; color:#cbd5e1; display:flex; align-items:center; gap:6px; }
+  header input[type=password] { width:180px; }
+  nav { display:flex; gap:4px; padding:0 20px; background:#1f2937; }
+  nav button { background:none; border:0; color:#cbd5e1; padding:10px 14px; cursor:pointer; font:inherit; border-bottom:3px solid transparent; }
+  nav button.active { color:#fff; border-bottom-color:#818cf8; }
+  main { padding:18px 20px; max-width:1400px; margin:0 auto; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-bottom:16px; }
+  .panel h2 { font-size:15px; margin:0 0 10px; }
+  .row { display:flex; gap:16px; align-items:flex-start; }
+  .row > .grow { flex:1; min-width:0; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
+  tr.clickable { cursor:pointer; }
+  tr.clickable:hover { background:#f2f3fb; }
+  tr.selected { background:#eef0ff; }
+  code, pre, .mono { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12.5px; }
+  pre { background:#0f172a; color:#e2e8f0; padding:10px; border-radius:6px; overflow:auto; max-height:320px; margin:4px 0 10px; white-space:pre-wrap; word-break:break-word; }
+  button.btn { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:6px 12px; cursor:pointer; font:inherit; }
+  button.btn.secondary { background:#e5e7eb; color:#111827; }
+  button.btn.danger { background:#dc2626; }
+  button.btn.ok { background:#16a34a; }
+  button.btn:disabled { opacity:.5; cursor:default; }
+  input, select, textarea { font:inherit; padding:5px 8px; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:var(--text); }
+  textarea { width:100%; min-height:140px; font-family:ui-monospace,Consolas,monospace; font-size:12.5px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; font-weight:600; white-space:nowrap; }
+  .s-queued { background:#e5e7eb; color:#374151; }
+  .s-running { background:#dbeafe; color:#1d4ed8; }
+  .s-waiting_approval, .s-waiting, .s-pending { background:#fef3c7; color:#92400e; }
+  .s-succeeded, .s-approved, .s-published { background:#dcfce7; color:#166534; }
+  .s-failed, .s-rejected { background:#fee2e2; color:#991b1b; }
+  .s-cancelled, .s-closed, .s-draft { background:#e2e8f0; color:#334155; }
+  .muted { color:var(--muted); }
+  .kv { display:grid; grid-template-columns:max-content 1fr; gap:4px 14px; margin-bottom:10px; }
+  .kv dt { color:var(--muted); }
+  .kv dd { margin:0; }
+  details.step { border:1px solid var(--line); border-radius:6px; margin-bottom:6px; background:#fafbff; }
+  details.step > summary { cursor:pointer; padding:7px 10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  details.step > div { padding:0 12px 6px; }
+  .label { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-top:6px; }
+  .card { border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:10px; background:#fffdf5; }
+  .card .msg { font-size:15px; margin:4px 0 8px; }
+  .actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .error-box { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:8px 10px; border-radius:6px; margin-bottom:10px; }
+  #toasts { position:fixed; right:16px; bottom:16px; display:flex; flex-direction:column; gap:8px; z-index:10; }
+  .toast { background:#111827; color:#fff; padding:9px 14px; border-radius:6px; max-width:480px; box-shadow:0 4px 14px rgba(0,0,0,.2); }
+  .toast.err { background:#991b1b; }
+  .count { background:#f59e0b; color:#111; border-radius:999px; padding:0 7px; font-size:11px; margin-left:4px; }
+  .empty { color:var(--muted); padding:10px 0; }
+  .runs-panel { flex:0 0 620px; max-width:100%; overflow-x:auto; }
+  .runs-panel th, .runs-panel td { padding:6px 6px; }
+  .trigger-panel { flex:0 0 460px; max-width:100%; }
+  .nowrap { white-space:nowrap; }
+  td.truncate { max-width:170px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .panel h2 .mono { word-break:break-all; }
+  @media (max-width: 1100px) {
+    .row { flex-direction:column; }
+    .runs-panel, .trigger-panel { flex:1 1 auto; width:100%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Relay Console</h1>
+  <span id="health" class="badge s-queued">checking…</span>
+  <span class="spacer"></span>
+  <label>API token <input id="token" type="password" autocomplete="off"></label>
+  <label><input id="autorefresh" type="checkbox" checked> auto-refresh</label>
+  <a id="ledgerLink" href="http://localhost:9210/admin/ledger" target="_blank" rel="noopener noreferrer" style="color:#a5b4fc">mock-world ledger ↗</a>
+</header>
+<nav>
+  <button data-tab="workflows">Workflows</button>
+  <button data-tab="runs">Runs</button>
+  <button data-tab="approvals">Approvals <span id="pendingCount" class="count" hidden></span></button>
+</nav>
+<main id="view"></main>
+<div id="toasts"></div>
+
+<script>
+'use strict';
+// Every value from the API is rendered through text nodes (no innerHTML), so payload text can never become markup.
+
+const state = {
+  tab: localStorage.getItem('relay.tab') || 'runs',
+  token: localStorage.getItem('relay.token') || 'relay-demo-token',
+  selectedRun: null,
+  openSteps: new Set(),
+  runFilter: '',
+  samples: null,
+  triggerFor: null,
+  approvalsSignature: '',
+};
+const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
+
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'value') el.value = v;
+    else el.setAttribute(k, v === true ? '' : String(v));
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid === null || kid === undefined || kid === false) continue;
+    el.append(kid instanceof Node ? kid : String(kid));
+  }
+  return el;
+}
+const badge = (status) => h('span', { class: `badge s-${status}` }, status);
+const json = (v) => h('pre', {}, JSON.stringify(v, null, 2));
+const short = (id) => (id && id.length > 14 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id);
+const when = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : '—');
+
+function toast(text, isError) {
+  const t = h('div', { class: `toast${isError ? ' err' : ''}` }, text);
+  document.getElementById('toasts').append(t);
+  setTimeout(() => t.remove(), isError ? 7000 : 3500);
+}
+
+async function api(method, path, body, extraHeaders) {
+  const headers = { Authorization: `Bearer ${state.token}`, ...(extraHeaders || {}) };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const e = data && data.error ? `${res.status} ${data.error.code}: ${data.error.message}` : `HTTP ${res.status}`;
+    throw new Error(e);
+  }
+  return data;
+}
+
+function setView(...children) {
+  document.getElementById('view').replaceChildren(...children);
+}
+
+// ── Workflows ────────────────────────────────────────────────────────────
+
+async function renderWorkflows() {
+  const [workflows, samples] = await Promise.all([api('GET', '/workflows'), state.samples || api('GET', '/samples')]);
+  state.samples = samples;
+  const table = h('table', {},
+    h('thead', {}, h('tr', {}, ['Workflow', 'Name', 'Status', 'Version', 'Trigger', ''].map((t) => h('th', {}, t)))),
+    h('tbody', {}, workflows.map((w) => h('tr', { class: state.triggerFor === w.id ? 'selected' : '' },
+      h('td', { class: 'mono' }, w.id),
+      h('td', {}, w.name),
+      h('td', {}, badge(w.status), w.has_unpublished_changes ? h('span', { class: 'muted' }, ' (draft changes)') : null),
+      h('td', {}, w.version),
+      h('td', {}, w.trigger_type || '—'),
+      h('td', {}, h('button', { class: 'btn secondary', disabled: w.status !== 'published', onclick: () => { state.triggerFor = w.id; render(); } }, 'Trigger…')),
+    ))),
+  );
+  setView(
+    h('div', { class: 'row' },
+      h('div', { class: 'panel grow' }, h('h2', {}, 'Workflows'), table),
+      state.triggerFor ? triggerPanel(workflows.find((w) => w.id === state.triggerFor)) : null,
+    ),
+  );
+}
+
+function triggerPanel(workflow) {
+  if (!workflow) return null;
+  const samples = state.samples.filter((s) => s.workflow === workflow.id);
+  const textarea = h('textarea', { spellcheck: 'false' });
+  textarea.value = JSON.stringify(samples[0] ? samples[0].body : {}, null, 2);
+  const note = h('div', { class: 'muted' }, samples[0] ? samples[0].note : 'Empty input.');
+  const select = h('select', { onchange: () => {
+    const s = samples.find((x) => x.id === select.value);
+    textarea.value = JSON.stringify(s ? s.body : {}, null, 2);
+    note.textContent = s ? s.note : 'Empty input.';
+  } }, samples.map((s) => h('option', { value: s.id }, s.id)), h('option', { value: '' }, '(empty)'));
+  const asWebhook = h('input', { type: 'checkbox', checked: workflow.trigger_type === 'webhook' });
+  const secret = h('input', { type: 'password', placeholder: 'X-Relay-Secret', autocomplete: 'off' });
+  const secretRow = h('label', { class: 'actions' }, 'Secret ', secret);
+  const syncSecret = () => { secretRow.hidden = !asWebhook.checked; };
+  asWebhook.addEventListener('change', syncSecret);
+  syncSecret();
+
+  const go = h('button', { class: 'btn', onclick: async () => {
+    let input;
+    try { input = JSON.parse(textarea.value || '{}'); } catch { return toast('Input is not valid JSON', true); }
+    go.disabled = true;
+    try {
+      const res = asWebhook.checked
+        ? await api('POST', `/hooks/${encodeURIComponent(workflow.id)}`, input, { 'X-Relay-Secret': secret.value })
+        : await api('POST', `/workflows/${encodeURIComponent(workflow.id)}/trigger`, { input });
+      toast(`Run ${res.run_id} queued`);
+      state.selectedRun = res.run_id;
+      state.openSteps.clear();
+      switchTab('runs');
+    } catch (e) {
+      toast(e.message, true);
+    } finally {
+      go.disabled = false;
+    }
+  } }, asWebhook.checked ? 'Send webhook' : 'Trigger run');
+  asWebhook.addEventListener('change', () => { go.textContent = asWebhook.checked ? 'Send webhook' : 'Trigger run'; });
+
+  return h('div', { class: 'panel trigger-panel' },
+    h('h2', {}, `Trigger ${workflow.id}`),
+    h('div', { class: 'actions' }, 'Sample ', select),
+    note,
+    h('div', { class: 'label' }, 'Input (becomes {{trigger.body}})'),
+    textarea,
+    h('div', { class: 'actions' }, h('label', {}, asWebhook, ' send as webhook'), secretRow),
+    h('div', { class: 'actions', style: 'margin-top:8px' }, go, h('button', { class: 'btn secondary', onclick: () => { state.triggerFor = null; render(); } }, 'Close')),
+  );
+}
+
+// ── Runs + trace ─────────────────────────────────────────────────────────
+
+async function renderRuns() {
+  const query = state.runFilter ? `?limit=50&status=${encodeURIComponent(state.runFilter)}` : '?limit=50';
+  const [runs, trace] = await Promise.all([
+    api('GET', `/runs${query}`),
+    state.selectedRun ? api('GET', `/runs/${encodeURIComponent(state.selectedRun)}`).catch((e) => ({ error: e.message })) : null,
+  ]);
+
+  const filter = h('select', { onchange: (e) => { state.runFilter = e.target.value; render(); } },
+    ['', 'queued', 'running', 'waiting_approval', 'succeeded', 'failed', 'cancelled'].map((s) =>
+      h('option', { value: s, selected: s === state.runFilter }, s || 'all statuses')));
+
+  const list = h('div', { class: 'panel runs-panel' },
+    h('div', { class: 'actions', style: 'justify-content:space-between' }, h('h2', {}, 'Runs'), filter),
+    runs.length === 0 ? h('div', { class: 'empty' }, 'No runs yet — trigger one from the Workflows tab.') :
+    h('table', {},
+      h('thead', {}, h('tr', {}, ['Run', 'Workflow', 'Status', 'Steps', 'Created'].map((t) => h('th', {}, t)))),
+      h('tbody', {}, runs.map((r) => h('tr', {
+        class: `clickable${r.run_id === state.selectedRun ? ' selected' : ''}`,
+        onclick: () => { state.selectedRun = r.run_id; state.openSteps.clear(); render(); },
+      },
+        h('td', { class: 'mono nowrap', title: r.run_id }, short(r.run_id)),
+        h('td', { class: 'truncate', title: r.workflow_id }, r.workflow_id),
+        h('td', { class: 'nowrap' }, badge(r.status)),
+        h('td', {}, r.steps_executed),
+        h('td', { class: 'nowrap' }, when(r.created_at)),
+      ))),
+    ),
+  );
+  setView(h('div', { class: 'row' }, list, h('div', { class: 'grow' }, traceView(trace))));
+}
+
+function traceView(run) {
+  if (!run) return h('div', { class: 'panel empty' }, 'Select a run to see its trace.');
+  if (run.error && !run.run_id) return h('div', { class: 'panel error-box' }, run.error);
+
+  const cancel = TERMINAL.has(run.status) ? null : h('button', { class: 'btn danger', onclick: async () => {
+    try { const r = await api('POST', `/runs/${encodeURIComponent(run.run_id)}/cancel`); toast(`Run ${r.status}${r.cancel_requested && r.status === 'running' ? ' (cancel requested)' : ''}`); render(); }
+    catch (e) { toast(e.message, true); }
+  } }, 'Cancel run');
+
+  const waiting = run.steps.find((s) => s.status === 'waiting' && s.approval_id);
+  return h('div', { class: 'panel' },
+    h('div', { class: 'actions', style: 'justify-content:space-between' },
+      h('h2', {}, 'Run ', h('span', { class: 'mono' }, run.run_id), ' ', badge(run.status)),
+      cancel),
+    run.error ? h('div', { class: 'error-box' }, `${run.error.code}: ${run.error.message}`) : null,
+    h('dl', { class: 'kv' },
+      h('dt', {}, 'Workflow'), h('dd', {}, `${run.workflow_id} (v${run.workflow_version}, snapshot)`),
+      h('dt', {}, 'Trigger'), h('dd', {}, run.trigger_type),
+      h('dt', {}, 'Steps executed'), h('dd', {}, `${run.steps_executed} / max_steps ${run.max_steps}`),
+      h('dt', {}, 'AI tokens'), h('dd', {}, run.ai_tokens_used),
+      h('dt', {}, 'Ended by'), h('dd', {}, run.ended_by || '—'),
+      h('dt', {}, 'Started / finished'), h('dd', {}, `${when(run.started_at)} / ${when(run.finished_at)}`),
+    ),
+    waiting ? approvalActions(waiting.approval_id, 'This run is waiting for approval at ' + waiting.node_id) : null,
+    h('div', { class: 'label' }, 'Trigger input'),
+    json(run.input),
+    h('div', { class: 'label' }, `Steps (${run.steps.length})`),
+    run.steps.length === 0 ? h('div', { class: 'empty' }, 'No steps yet.') : run.steps.map(stepView),
+  );
+}
+
+function stepView(s) {
+  const key = String(s.sequence);
+  const details = h('details', { class: 'step', open: state.openSteps.has(key) },
+    h('summary', {},
+      h('strong', {}, `#${s.sequence} ${s.node_id}`),
+      h('span', { class: 'muted' }, s.type),
+      badge(s.status),
+      h('span', { class: 'muted' }, `attempt ${s.attempt}`),
+      s.duration_ms !== null ? h('span', { class: 'muted' }, `${s.duration_ms} ms`) : null,
+      s.tokens ? h('span', { class: 'muted' }, `tokens ${s.tokens.prompt}+${s.tokens.completion}`) : null,
+      s.next ? h('span', { class: 'muted' }, `→ ${s.next}`) : null,
+    ),
+    h('div', {},
+      s.error ? h('div', { class: 'error-box' }, `${s.error.code}: ${s.error.message}`) : null,
+      s.idempotency_key ? [h('div', { class: 'label' }, 'Idempotency-Key'), h('div', { class: 'mono' }, s.idempotency_key)] : null,
+      h('div', { class: 'label' }, 'Resolved input'), json(s.input),
+      h('div', { class: 'label' }, 'Output'), json(s.output),
+      s.ai_attempts ? [h('div', { class: 'label' }, 'AI attempts (schema validation)'), json(s.ai_attempts)] : null,
+      s.attempts_log && s.attempts_log.length ? [h('div', { class: 'label' }, 'Attempts'), json(s.attempts_log)] : null,
+      s.resume_at ? [h('div', { class: 'label' }, 'Resume at'), h('div', {}, new Date(s.resume_at).toLocaleString())] : null,
+      h('div', { class: 'muted' }, `started ${when(s.started_at)} · finished ${when(s.finished_at)}`),
+    ),
+  );
+  details.addEventListener('toggle', () => (details.open ? state.openSteps.add(key) : state.openSteps.delete(key)));
+  return details;
+}
+
+// ── Approvals ────────────────────────────────────────────────────────────
+
+function approvalActions(approvalId, title) {
+  const comment = h('input', { placeholder: 'comment (optional)', style: 'flex:1; min-width:180px' });
+  const decide = (decision) => async () => {
+    try {
+      const a = await api('POST', `/approvals/${encodeURIComponent(approvalId)}/${decision}`, { comment: comment.value || undefined });
+      toast(`Approval ${a.status} by ${a.decided_by}`);
+      state.approvalsSignature = '';
+      render();
+    } catch (e) { toast(e.message, true); }
+  };
+  return h('div', { class: 'card' },
+    title ? h('div', { class: 'muted' }, title) : null,
+    h('div', { class: 'actions' }, comment,
+      h('button', { class: 'btn ok', onclick: decide('approve') }, 'Approve'),
+      h('button', { class: 'btn danger', onclick: decide('reject') }, 'Reject')),
+  );
+}
+
+async function renderApprovals(force) {
+  const all = await api('GET', '/approvals');
+  const pending = all.filter((a) => a.status === 'pending');
+  const signature = all.map((a) => `${a.id}:${a.status}`).join(',');
+  if (!force && signature === state.approvalsSignature) return;
+  state.approvalsSignature = signature;
+  const decided = all.filter((a) => a.status !== 'pending').slice(-15).reverse();
+
+  setView(
+    h('div', { class: 'panel' },
+      h('h2', {}, `Pending approvals (${pending.length})`),
+      pending.length === 0 ? h('div', { class: 'empty' }, 'Nothing is waiting for a human.') :
+      pending.map((a) => h('div', { class: 'card' },
+        h('div', { class: 'actions' }, badge('pending'), h('span', { class: 'mono' }, a.id), h('span', { class: 'muted' }, `${a.workflow_id} · node ${a.node_id} · ${when(a.created_at)}`),
+          h('button', { class: 'btn secondary', onclick: () => { state.selectedRun = a.run_id; state.openSteps.clear(); switchTab('runs'); } }, `Open run ${short(a.run_id)}`)),
+        h('div', { class: 'msg' }, a.message),
+        approvalActions(a.id),
+      )),
+    ),
+    h('div', { class: 'panel' },
+      h('h2', {}, 'Recently decided'),
+      decided.length === 0 ? h('div', { class: 'empty' }, 'No decisions yet.') :
+      h('table', {},
+        h('thead', {}, h('tr', {}, ['Approval', 'Status', 'Decided by', 'When', 'Comment', 'Message'].map((t) => h('th', {}, t)))),
+        h('tbody', {}, decided.map((a) => h('tr', {},
+          h('td', { class: 'mono' }, short(a.id)), h('td', {}, badge(a.status)), h('td', {}, a.decided_by || '—'),
+          h('td', {}, when(a.decided_at)), h('td', {}, a.comment || ''), h('td', {}, a.message),
+        )))),
+    ),
+  );
+}
+
+// ── Shell ────────────────────────────────────────────────────────────────
+
+async function refreshHeader() {
+  const health = document.getElementById('health');
+  try {
+    const r = await fetch('/health');
+    health.textContent = r.ok ? 'API online' : `API ${r.status}`;
+    health.className = `badge ${r.ok ? 's-succeeded' : 's-failed'}`;
+  } catch {
+    health.textContent = 'API offline';
+    health.className = 'badge s-failed';
+  }
+  try {
+    const pending = await api('GET', '/approvals?status=pending');
+    const count = document.getElementById('pendingCount');
+    count.textContent = pending.length;
+    count.hidden = pending.length === 0;
+  } catch { /* token problems surface in the view */ }
+}
+
+let rendering = false;
+let rerender = null;
+async function render(force = true) {
+  if (rendering) {
+    // Remember the latest request instead of dropping it (e.g. a tab switch during an auto-refresh).
+    rerender = rerender === null ? force : rerender || force;
+    return;
+  }
+  rendering = true;
+  try {
+    document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === state.tab));
+    if (state.tab === 'workflows') await renderWorkflows();
+    else if (state.tab === 'runs') await renderRuns();
+    else await renderApprovals(force);
+  } catch (e) {
+    setView(h('div', { class: 'panel error-box' }, e.message, e.message.startsWith('401') ? ' — check the API token in the header.' : ''));
+  } finally {
+    rendering = false;
+    if (rerender !== null) {
+      const next = rerender;
+      rerender = null;
+      render(next);
+    }
+  }
+}
+
+function switchTab(tab) {
+  state.tab = tab;
+  localStorage.setItem('relay.tab', tab);
+  state.approvalsSignature = '';
+  render();
+}
+
+document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+const tokenInput = document.getElementById('token');
+tokenInput.value = state.token;
+tokenInput.addEventListener('change', () => { state.token = tokenInput.value; localStorage.setItem('relay.token', state.token); render(); refreshHeader(); });
+
+setInterval(() => {
+  if (!document.getElementById('autorefresh').checked || document.hidden) return;
+  refreshHeader();
+  // The workflows tab holds a form; don't wipe what the user is typing.
+  if (state.tab !== 'workflows') render(false);
+}, 2000);
+
+refreshHeader();
+render();
+</script>
+</body>
+</html>

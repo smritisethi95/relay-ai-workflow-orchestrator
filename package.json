@@ -1,0 +1,40 @@
+{
+  "name": "relay-ai-workflow-orchestrator",
+  "version": "1.0.0",
+  "description": "Relay - durable AI workflow orchestrator (Airtribe capstone)",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "api": "npm run build && node dist/api/main.js",
+    "worker": "npm run build && node dist/worker/main.js",
+    "db:indexes": "npm run build && node dist/cli/db-indexes.js",
+    "seed": "npm run build && node dist/cli/seed.js",
+    "db:reset-demo": "npm run build && node dist/cli/reset-demo.js --yes",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@nestjs/common": "^12.4.0",
+    "@nestjs/core": "^12.4.0",
+    "@nestjs/platform-express": "^12.4.0",
+    "ajv": "^8.20.0",
+    "dotenv": "^18.0.9",
+    "mongodb": "^7.8.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "ulid": "^3.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0"
+  }
+}
