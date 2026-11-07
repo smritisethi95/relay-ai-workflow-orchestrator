@@ -17,12 +17,12 @@ function int(name: string, fallback: number): number {
   return value;
 }
 
-export type AiProviderKind = 'openai' | 'heuristic' | 'fake';
+export type AiProviderKind = 'openai' | 'heuristic';
 
 function aiProvider(): AiProviderKind {
   const value = str('AI_PROVIDER', 'openai');
-  if (value !== 'openai' && value !== 'heuristic' && value !== 'fake') {
-    throw new Error(`AI_PROVIDER must be openai | heuristic | fake, got '${value}'`);
+  if (value !== 'openai' && value !== 'heuristic') {
+    throw new Error(`AI_PROVIDER must be openai | heuristic, got '${value}'`);
   }
   return value;
 }

@@ -1,0 +1,30 @@
+{
+  "id": "wf_schema_demo",
+  "name": "Schema enforcement demo",
+  "description": "AI node with an unsatisfiable output schema (integer >= 1000 and <= 10). Shows validation, one repair attempt, and a clean ai_output_invalid failure.",
+  "trigger": { "type": "manual" },
+  "entry": "guess",
+  "limits": { "max_steps": 5 },
+  "nodes": [
+    {
+      "id": "guess",
+      "type": "ai",
+      "params": {
+        "prompt": "Return a JSON object with an integer field 'answer'.",
+        "output_schema": {
+          "type": "object",
+          "properties": { "answer": { "type": "integer", "minimum": 1000, "maximum": 10 } },
+          "required": ["answer"],
+          "additionalProperties": false
+        }
+      },
+      "next": "never"
+    },
+    {
+      "id": "never",
+      "type": "notify",
+      "params": { "channel": "chat", "to": "#support", "message": "This must never be sent: {{nodes.guess.output.answer}}" },
+      "next": null
+    }
+  ]
+}

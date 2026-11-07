@@ -11,6 +11,12 @@ export class DomainError extends Error {
   }
 }
 
+/** Trace data a failing step still wants recorded (e.g. AI attempts and tokens spent before giving up). */
+export interface StepErrorTrace {
+  tokens?: { prompt: number; completion: number };
+  aiAttempts?: { raw: string; valid: boolean; errors?: string[] }[];
+}
+
 /** Error raised while executing a node; `retryable` decides between backoff and failing the run. */
 export abstract class StepError extends Error {
   abstract readonly retryable: boolean;
@@ -19,6 +25,7 @@ export abstract class StepError extends Error {
     readonly code: string,
     message: string,
     readonly statusCode?: number,
+    readonly trace?: StepErrorTrace,
   ) {
     super(message);
   }

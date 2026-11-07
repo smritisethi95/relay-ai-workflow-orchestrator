@@ -14,6 +14,7 @@
     "worker": "npm run build && node dist/worker/main.js",
     "db:indexes": "npm run build && node dist/cli/db-indexes.js",
     "seed": "npm run build && node dist/cli/seed.js",
+    "db:reset-demo": "npm run build && node dist/cli/reset-demo.js --yes",
     "test": "vitest run",
     "test:watch": "vitest"
   },

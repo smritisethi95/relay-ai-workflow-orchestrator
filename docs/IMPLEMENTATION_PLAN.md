@@ -86,59 +86,63 @@ gantt
 ## Phase 2 — Persistence + Workflow API + Seeding (35 min)
 
 **Tasks**
-- [ ] `core/ports/*.ts` interfaces (§12).
-- [ ] `infra/repositories/mongo-repository.ts`: workflows (create/get/list/updateDraft/publish), runs, steps, approvals, `hasApprovedApproval`; map duplicate-key `11000` to domain errors (e.g. `workflow_exists`).
-- [ ] `infra/queue/mongo-queue.ts`: `enqueue` (upsert, `_id = run_id`), `claim` (atomic `findOneAndUpdate` + lease §8.3), `release`, `remove`.
-- [ ] `core/services/workflow.service.ts`: create (shape check, 409 exists), update draft, publish (validate → copy to `published_definition`, `version++`).
-- [ ] `infra/seed/seed.ts` (§13), invoked on API boot and via `npm run seed`.
-- [ ] NestJS: `app.module.ts`, `main.ts` (body limit 256 kB), `auth.guard.ts` (Bearer, skip `/hooks`, `/health`, `/console`), `http-error.filter.ts` (§10.3 shape).
-- [ ] Input guard: reject trigger bodies / definitions with keys starting with `$` or containing `.` (NoSQL operator injection, §14).
-- [ ] `core/guardrails/redact.ts`; apply to all workflow responses.
-- [ ] `WorkflowsController`: `GET /workflows`, `GET /workflows/:id`, `POST /workflows`, `PUT /workflows/:id`, `POST /workflows/:id/publish`, `GET /catalog`, `GET /health`.
+- [x] `core/ports/{repository,queue,clock}.ts` (§12). Enqueue/remove job are **Repository** methods so they join transactions; `Queue` only claims/releases.
+- [x] `infra/repositories/mongo-repository.ts`: workflows, runs, steps, approvals (idempotent upsert), jobs, `hasApprovedApproval`, `holdsJobLease` (fencing); `transaction()` binds a session.
+- [x] `infra/queue/mongo-queue.ts`: `claim` (atomic `findOneAndUpdate` + lease §8.3), `release`.
+- [x] `core/services/workflow.service.ts`: create (shape + unsafe-key check, 409 exists, returns validation preview), update draft (optimistic on `updated_at`), publish (validate → copy to `published_definition`, `version++`), seed.
+- [x] Seeding on API boot (`api/context.ts`) and via `npm run seed` (`src/cli/seed.ts`).
+- [x] NestJS: `app.module.ts` (dynamic module over pre-built core objects), `main.ts` (body limit 256 kB, body-parser errors in contract shape), `auth.ts` (Bearer guard + `@Public()`, constant-time compare), `http-error.filter.ts` + `error-response.ts` (§10.3 shape).
+- [x] Input guard: definitions with keys starting with `$` or containing `.` → 400 `invalid_key`.
+- [x] `core/guardrails/redact.ts` applied to workflow responses (`secret` → `[redacted]`).
+- [x] Controllers: `GET /workflows`, `GET /workflows/:id`, `POST /workflows`, `PUT /workflows/:id`, `POST /workflows/:id/publish`, `GET /catalog`, `GET /health`.
+- [x] Tests: `test/fakes/in-memory-repository.ts`, `workflow-service.spec.ts`, `guardrails.spec.ts` → 45/45 green.
 
-**Exit criteria**
-- `GET /workflows` lists 4 seeds with `status: "published"`.
-- Bad definitions → 422 with `code` per rule; duplicate id → 409.
-- Webhook secrets not visible in any response.
+**Exit criteria** — met
+- `GET /workflows` lists 4 seeds with `status: "published"` (smoke §1 all PASS).
+- Bad definitions → 422 with `code` per rule (smoke §3 all PASS); duplicate id → 409.
+- Webhook secrets show as `[redacted]`.
 
 ---
 
 ## Phase 3 — Triggers + Worker + Deterministic Nodes (50 min)
 
 **Tasks**
-- [ ] `core/services/trigger.service.ts`: one transaction → insert run (`queued`, snapshot, version, input) + insert job.
-- [ ] `POST /workflows/:id/trigger` (`{"input":{}}` → 202 `{run_id}`), 409 if never published, 400 if input not an object.
-- [ ] `HooksController` `POST /hooks/:id`: constant-time secret compare (§10.2), 401 wrong/missing, 409 if trigger type ≠ webhook.
-- [ ] `RunsController`: `GET /runs`, `GET /runs/:id` (trace shape §10.4).
-- [ ] `core/engine/transitions.ts` (allowed transitions map + guarded update).
-- [ ] `core/engine/retry.ts` (classification + backoff §15).
-- [ ] `core/engine/engine.ts` → `advance()` exactly as §8.4 (NEW vs RE-EXECUTE, step cap, gate, persist → act → persist).
-- [ ] `infra/world/http-world-client.ts` (fetch, `AbortSignal.timeout(HTTP_TIMEOUT_MS)`, `Idempotency-Key`, parse JSON, map errors).
-- [ ] Handlers: `condition` (§11.2), `notify` (§11.4), `http_request` + URL allowlist (§11.1), `delay` durable re-queue (§11.3).
-- [ ] `src/worker/main.ts`: loop (§8.3), `WORKER_ID`, write `.worker.pid`, graceful SIGINT/SIGTERM.
+- [x] `core/services/trigger.service.ts`: one transaction → insert run (`queued`, snapshot, version, input) + upsert job.
+- [x] `POST /workflows/:id/trigger` (`{"input":{}}` → 202 `{run_id}`), 409 if never published, 400 if input not an object / unsafe keys.
+- [x] `HooksController` `POST /hooks/:id` (`@Public`): constant-time secret compare (`core/guardrails/secrets.ts`), 401 wrong/missing, 409 if trigger type ≠ webhook.
+- [x] `RunsController`: `GET /runs`, `GET /runs/:id` (trace shape §10.4, secrets redacted).
+- [x] Guarded status transitions: done inside the engine via `updateRun(..., { fromStatuses })` (no separate `transitions.ts`).
+- [x] `core/engine/retry.ts` (408/429/5xx retryable, other 4xx permanent; backoff with jitter).
+- [x] `core/engine/engine.ts` → `advance()` as §8.4 (NEW vs RE-EXECUTE, step cap, gate, persist → act → persist, lease renew + fencing on every write, poison-job cap).
+- [x] `infra/world/http-world-client.ts` (fetch, `AbortSignal.timeout`, no redirects, `Idempotency-Key`).
+- [x] Handlers: `condition`, `notify`, `http_request` + URL allowlist, `delay` (resume time anchored to step creation). Also pulled forward: `approval`, `order_action`.
+- [x] `src/worker/main.ts`: loop, `WORKER_ID`, `.worker.pid`, graceful SIGINT/SIGTERM, release with backoff on unexpected errors.
+- [x] Tests: `test/fakes/{fake-world,harness}.ts`, `test/engine/engine.spec.ts` (20), `test/unit/retry.spec.ts` (15) → 80/80 green.
 
-**Exit criteria**
-- `pay_102` (`$40`) via webhook → `succeeded`; trace shows `is_large` → `auto_ok`.
-- Ledger (`GET :9210/admin/ledger`) shows `email.send` with an `idempotency_key`.
-- `wf_runaway` → `failed`, `error.code = max_steps_exceeded`, `steps_executed = 12`.
-- `{"mode":"down"}` on world → step retries visible in `attempts_log`; restore → run completes.
+**Exit criteria** — met
+- `$40` via webhook → `succeeded`; trace `is_large` → `auto_ok` (smoke §5 PASS).
+- Ledger shows the notify with an `idempotency_key` (smoke §2 PASS, no WARN).
+- `wf_runaway` → `failed`, `max_steps_exceeded`, `steps_executed = 12` (smoke §6 PASS; engine test).
+- Retries visible in `attempts_log` (engine tests with 503 + timeout); live world-down drill deferred to Phase 5/demo.
+- **Live smoke test: 25 PASS / 1 FAIL** — only "pending approval listed" (Phase 4).
 
 ---
 
 ## Phase 4 — Approvals, Gate, Cancel (30 min)
 
 **Tasks**
-- [ ] `approval` handler (§11.6): insert approval (duplicate key = already exists), step `waiting`, run `waiting_approval`, remove job.
-- [ ] `core/services/approval.service.ts` + `ApprovalsController`: `GET /approvals?status=pending`, `POST /approvals/:id/approve`, `POST /approvals/:id/reject` (transactions §10.2, 409 on re-decide, `decided_by="demo-user"`, `decided_at`).
-- [ ] `core/guardrails/approval-gate.ts` used by engine before any `requires_approval` node; `order_action` handler (§11.7) re-checks.
-- [ ] `order_action` handler: refund / replacement, `order_id` regex + encoding, permanent 4xx.
-- [ ] `core/services/run.service.ts` + `POST /runs/:id/cancel` (4 cases §10.2); engine checks `cancel_requested` between steps.
+- [x] `approval` handler (§11.6) + engine pause: insert approval (idempotent upsert), step `waiting`, run `waiting_approval`, remove job. *(done in Phase 3)*
+- [x] `core/services/approval.service.ts` + `ApprovalsController`: `GET /approvals?status=pending`, `GET /approvals/:id`, `POST /approvals/:id/approve`, `POST /approvals/:id/reject` (one transaction each, guarded on `status='pending'` → 409 on re-decide, `decided_by="demo-user"`, `decided_at`, optional `comment`).
+- [x] Engine gate before any `requires_approval` node (inline in `engine.ts`); `order_action` handler re-checks. *(done in Phase 3)*
+- [x] `order_action` handler: refund / replacement, `order_id` regex + encoding, permanent 4xx. *(done in Phase 3)*
+- [x] `RunService.cancel` + `POST /runs/:id/cancel` (queued / waiting_approval → cancelled at once with approval closed; running → `cancel_requested` + `expediteJob` so a sleeping run wakes; terminal → 409); engine checks `cancel_requested` between steps and marks a waiting step `cancelled`.
+- [x] Tests: `test/engine/approvals.spec.ts` (10) → 90/90 green.
 
-**Exit criteria**
-- `python scripts/smoke_test.py --url http://localhost:8080 --token relay-demo-token` → **all PASS** (explain any WARN).
-- Reject → run `cancelled`, `ended_by = rejected`.
-- Second approve on same approval → 409.
-- Cancel on terminal run → 409.
+**Exit criteria** — met
+- **Smoke test: 28 PASS, 0 WARN, 0 FAIL** (live, API :8091 + worker + mock world + Atlas).
+- Reject → run `cancelled`, `ended_by = rejected` (live + test).
+- Second approve on same approval → 409 (live + test).
+- Cancel on terminal run → 409 (live + test).
 
 ---
 
@@ -147,7 +151,7 @@ gantt
 **Procedure (PowerShell)**
 ```powershell
 Invoke-RestMethod -Method Post http://localhost:9210/admin/reset
-Invoke-RestMethod -Method Post http://localhost:8080/workflows/wf_slow_fulfillment/trigger `
+Invoke-RestMethod -Method Post http://localhost:8090/workflows/wf_slow_fulfillment/trigger `
   -Headers @{Authorization="Bearer relay-demo-token"} -ContentType 'application/json' `
   -Body '{"input":{"order_id":"ord_2003","customer_email":"lena@example.com"}}'
 # wait until the confirm email appears in the ledger, then during the 20s delay:
@@ -157,32 +161,32 @@ python scripts/duplication_check.py --url http://localhost:9210
 ```
 
 **Tasks**
-- [ ] Run the drill; record the kill point and the output.
-- [ ] Fix any bug found (typical: re-execution allocating a new sequence → key changes; delay restarting from zero; lease never expiring).
-- [ ] Optional second kill point: between `create_shipment` call and persist (add `CRASH_AFTER_CALL=create_shipment` env hook that `process.exit(1)` after the world call).
+- [x] Run the drill; record the kill point and the output → [VERIFICATION_REPORT.md](VERIFICATION_REPORT.md) §2 (Drill A: killed during `pack_delay`).
+- [x] Fix any bug found — none found; both drills passed first time.
+- [x] Second kill point between the `create_shipment` call and its persist: `RELAY_CRASH_AFTER_CALL=create_shipment` (drill-only, `src/infra/world/crash-after-call.ts`) → Drill B: 1 shipment executed, 1 replay absorbed.
 
-**Exit criteria**
-- `duplication_check.py` → `PASS`, exit code 0, no keyless WARN; `email.send` ×2 (confirm + shipped), `shipment.create` ×1.
+**Exit criteria** — met
+- `duplication_check.py` → `PASS`, exit code 0, no keyless WARN; `email.send` ×2, `shipment.create` ×1 — in **both** drills.
 
 ---
 
 ## Phase 6 — AI Node + Engine Tests (35 min)
 
 **Tasks**
-- [ ] `core/ports/ai-provider.ts`.
-- [ ] `infra/ai/openai-compatible.provider.ts` targeting **Groq** (`POST {AI_BASE_URL}/chat/completions`, `model: openai/gpt-oss-120b`, `response_format: {type:"json_object"}`, `temperature: 0`, `AbortSignal.timeout(AI_TIMEOUT_MS)`, map 429/5xx → Transient (honour `Retry-After`), 401/400 → Permanent, `usage.prompt_tokens/completion_tokens` → tokens).
-- [ ] `infra/ai/heuristic.provider.ts` (keywords: refund/money back → `refund_request`; broken/cracked/disappointed → `complaint`; else `question`; priority by urgency words; summary = first 200 chars, sanitized).
-- [ ] `infra/ai/fake.provider.ts` (scripted replies queue for tests).
-- [ ] `ai` handler (§11.5): system guard prompt, parse, Ajv, one repair, `ai_attempts`, tokens → step + run.
-- [ ] `test/fakes/in-memory-repository.ts`, `test/fakes/fake-world.ts`.
-- [ ] `test/unit/ai-schema.spec.ts`, `test/unit/retry.spec.ts`, `test/engine/engine.spec.ts` (all cases §17.2).
+- [x] `core/ports/ai-provider.ts` (done in Phase 3).
+- [x] `infra/ai/openai-compatible.provider.ts` targeting **Groq** (`model: openai/gpt-oss-120b`, JSON mode, `temperature: 0`, `reasoning_effort: low`, `AbortSignal.timeout(AI_TIMEOUT_MS)`, 408/429/5xx → Transient, other 4xx → Permanent, Groq `json_validate_failed` 400 → handed back as text so it goes through the repair path, usage → tokens).
+- [x] `infra/ai/heuristic.provider.ts` (offline fallback; fills whatever the schema asks for from keyword rules; never echoes customer text) + `infra/ai/create-provider.ts`.
+- [x] Scripted fake model for tests: `test/fakes/fake-ai.ts` (runtime `AI_PROVIDER` is now `openai | heuristic`).
+- [x] `core/nodes/ai.ts` (§11.5): guard system prompt + schema, parse (code fences tolerated), Ajv, one repair with the errors appended, `ai_attempts`, tokens → step + run; permanent `ai_output_invalid` keeps attempts + tokens in the trace (`StepError.trace`).
+- [x] Fakes `in-memory-repository.ts`, `fake-world.ts` (done in Phases 2–3).
+- [x] Tests: `test/unit/ai-node.spec.ts` (13), `test/engine/ai-triage.spec.ts` (8) → 110/110 green.
 
-**Exit criteria**
-- `pay_001` → `complaint` → `#support` chat; trace shows tokens.
+**Exit criteria** — met live with real Groq (see [VERIFICATION_REPORT.md](VERIFICATION_REPORT.md) §5)
+- `pay_001` → `complaint` → `#support` chat; trace shows tokens (393).
 - `pay_002` → `waiting_approval` → approve → `order.refund` once → customer email.
-- `pay_inject_001` → `waiting_approval`; ledger has no `order.refund` before approval.
-- `pay_inject_002` → only `chat.message` to `#support`; no email to attacker.
-- Schema failure demo: two `ai_attempts` in trace (repair), then success or `ai_output_invalid`.
+- `pay_inject_001` → `waiting_approval`; no `order.refund` before a human decision; rejected → `cancelled`.
+- `pay_inject_002` → only `chat.message` to `#support`; no email to the attacker.
+- Schema failure demo: two `ai_attempts` with Ajv errors in the trace, then `ai_output_invalid`.
 - `npm test` green.
 
 ---
@@ -190,36 +194,38 @@ python scripts/duplication_check.py --url http://localhost:9210
 ## Phase 7 — Console (25 min)
 
 **Tasks**
-- [ ] `src/api/console/index.html` served at `/console` (static, no auth on the page itself; API calls use the token field).
-- [ ] Tabs per §16: Workflows (+ trigger with JSON box), Runs (+ trace view, Cancel), Approvals (+ Approve / Reject).
-- [ ] Auto-refresh 2 s; status colour badges; render with `textContent` only.
+- [x] `src/api/console/index.html` served at `/console` (public page; read from disk per request; strict CSP, `nosniff`, `no-store`, no framing); `/` redirects to `/console`; API calls use the token field (stored in `localStorage`).
+- [x] Tabs: Workflows (trigger form prefilled from `GET /samples`, manual or webhook with secret), Runs (status filter, trace view with expandable steps: resolved input, output, idempotency key, attempts, AI attempts, tokens; inline Approve/Reject; Cancel), Approvals (pending cards with comment + Approve/Reject, recently decided table), pending count badge.
+- [x] Auto-refresh 2 s (skips the Workflows form; approvals only re-render when the set changes so typed comments survive; open trace steps stay open); status colour badges; every value rendered via text nodes (no `innerHTML`).
 
-**Exit criteria**
-- From the browser: trigger `pay_101`, see `waiting_approval`, approve, see `succeeded` with full trace.
+**Exit criteria** — met (checked in the browser)
+- Triggered `pay_101` from the Workflows tab → `waiting_approval` → approved from the Approvals tab with a comment → run `succeeded`, `ended_by: completed`, full 3-step trace visible.
 
 ---
 
 ## Phase 8 — Documentation (25 min)
 
 **README.md**
-- [ ] Overview + architecture diagram (from §3).
-- [ ] Prerequisites (Node 20+, MongoDB Atlas account, Groq API key, Python 3.9+), env vars table (§15).
-- [ ] Setup: `npm i` → copy `.env.example` to `.env` and fill `MONGODB_URI` + `AI_API_KEY` → `npm run db:indexes` → `python scripts/mock_world.py --port 9210` → `npm run api` → `npm run worker` → open `/console`.
-- [ ] API reference (§10.1) + curl/PowerShell examples for each sample payload.
-- [ ] Run state machine diagram (§8.1) + step state machine.
-- [ ] Exactly-once design: key scheme + crash-window table (§9).
-- [ ] Guardrails table (§14).
-- [ ] Testing: `npm test`, smoke test, drill.
-- [ ] Demo reproduction steps (Phase 9 script).
-- [ ] Design decisions (MongoDB Atlas as store + queue instead of Postgres and the equivalence table, snapshot field, separate worker, Groq + heuristic fallback) + known limitations (§18).
+- [x] Overview + architecture diagram (from §3).
+- [x] Prerequisites (Node 20+, MongoDB Atlas account, Groq API key, Python 3.9+), env vars table (§15).
+- [x] Setup: `npm i` → copy `.env.example` to `.env` and fill `MONGODB_URI` + `AI_API_KEY` → `npm run db:indexes` → `python scripts/mock_world.py --port 9210` → `npm run api` → `npm run worker` → open `/console`.
+- [x] API reference (§10.1) + curl/PowerShell examples for each sample payload.
+- [x] Run state machine diagram (§8.1) + step state machine.
+- [x] Exactly-once design: key scheme + crash-window table (§9).
+- [x] Guardrails table (§14).
+- [x] Testing: `npm test`, smoke test, drill.
+- [x] Demo reproduction steps (Phase 9 script → `docs/DEMO_SCRIPT.md`).
+- [x] Design decisions (MongoDB Atlas as store + queue instead of Postgres and the equivalence table, snapshot field, separate worker, Groq + heuristic fallback) + known limitations (§18).
 
 **docs/VERIFICATION_REPORT.md**
-- [ ] Smoke test output (all PASS; WARNs explained).
-- [ ] Duplication check output + where the worker was killed.
-- [ ] Injection payload traces (`pay_inject_001`, `pay_inject_002`) and what they showed.
-- [ ] Idempotency key scheme + crash-window answer.
-- [ ] `npm test` summary.
-- [ ] Known limitations.
+- [x] Smoke test output (all PASS; WARNs explained).
+- [x] Duplication check output + where the worker was killed.
+- [x] Injection payload traces (`pay_inject_001`, `pay_inject_002`) and what they showed.
+- [x] Idempotency key scheme + crash-window answer.
+- [x] `npm test` summary.
+- [x] Known limitations (+ outage / flaky-world drills).
+
+**Status:** done — `npm run db:reset-demo` added for a clean demo database.
 
 ---
 
@@ -237,6 +243,8 @@ python scripts/duplication_check.py --url http://localhost:9210
 | 8 | Schema enforcement | AI attempt invalid → repair visible in trace |
 
 Upload, make the GitHub repo public, submit both links.
+
+**Status:** script written — [DEMO_SCRIPT.md](DEMO_SCRIPT.md) (prep, 10 scenes, troubleshooting; `docs/demo/wf_schema_demo.json` for scene 9). Recording is up to you.
 
 ---
 
@@ -268,8 +276,8 @@ Upload, make the GitHub repo public, submit both links.
 ---
 
 ## Definition of Done
-- [ ] Smoke test: all PASS (WARNs explained).
-- [ ] Duplication check: PASS after a live kill -9.
-- [ ] `npm test`: validator, resolver, schema, idempotency, gate bypass, injection, step cap — green.
-- [ ] Console shows workflows, runs, trace, approvals with buttons.
+- [x] Smoke test: all PASS (WARNs explained).
+- [x] Duplication check: PASS after a live kill -9.
+- [x] `npm test`: validator, resolver, schema, idempotency, gate bypass, injection, step cap — green.
+- [x] Console shows workflows, runs, trace, approvals with buttons.
 - [ ] README + verification report + demo video + public GitHub link submitted.

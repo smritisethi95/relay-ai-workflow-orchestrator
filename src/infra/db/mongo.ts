@@ -27,6 +27,7 @@ export async function connectMongo(): Promise<Db> {
       connectTimeoutMS: config.dbTimeoutMs,
       retryWrites: true,
       writeConcern: { w: 'majority' },
+      ignoreUndefined: true,
       appName: 'relay',
     });
     await client.connect();
